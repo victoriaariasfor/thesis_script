@@ -1,0 +1,748 @@
+Importing the packages and defining the keys for the videos
+#list of videos ID
+list_ID= ["6tdSd7zSrWI","Pb-N-God7P0","RbIZGyWbxKs","XVZH1v2fMGc","_b7mOe0_eWs","_DLWr5-beOo","-2vE-hFCpLc","-44RfHA5ISM","091WmsBy78E","0pmKBwkei3U","1qphrR6NEZY","1wAajf3k0Vo","2CsTzVyZP4M","2drA3fxAa3c","2VAbGTRAKZc","2YAtisTGswA","3-BNUh9Dra0","3-YNmFlAu18","31RDqm-eo3E","3hR2YTINsZ4","4KibfblZMMg","5An11XxnoVg","5MZfFLmmS2I","5x3XtbksT7M","6DPn7x0yAms","7EXDVfH_gL0","7J7aJtGphVs","9DzZ6DEebKc","9H2KUzLCFTM","9Phr_iFAO1U","9wIHJQfUNhw","A_HzJI6N1zk","A11u41iCef4","A5eXycFQXEg","crbRrA4uGQ0","CXtCWHtLQPA","eWuPRfBYhFE","f-lg9Bs2Wkg","FBc7zRYKGl0","fNPWGig5dZU","gKoGtv8ooao","hU5vuKn3VBs","HyX4piby2UA","I-Mb5NqmHnE","ibbXXtcNWvA","Id9URlsIi24","iesHwejMIIE","InjcShk1TgA","iTcgwGYYp9Y","j9A0m3OJPoU","JIuleR_yQ8s","K2SRs2SgQ48","KibIUuhrQXU","kizG-KyCI60","KUXqbm1aEZM","KXwmHq2HQaM","L2xBqBpHzMY","MB0c6B2PbNY","myh4XYaDS68","nEkyqtcXbyc","nelkf0Po_nc","nV31EFbLxGc","OBjKDuuGql0","OkonesWzL6s","P-XGqJM0bkI","pHtBtR-gnCM","PR2VqRmg-JY","QbPMA7lRsEY","rK66s7VQmXE","RR9fwpatYfg","RToUZJ0l7Pk","ry3TRFwQvEI","S5IW3QeZuJ8","sPzJi4Mrfcc","t89aiVLgf1k","tZ6yQme46Ew","ucyDC8mlc2s","UE2KQsOT6RY","UqPDq-JS78w","uZTKl5H8W20","V5NluV68LD0","vBYMmh9PdeY","VCSKbkAqMIg","vXar65eUpBs","w2tBRBUL99A","w4haVcPnG8k","WN6e3JlQ9tk","wX_ullxoWFI","XwnKVb2GgLM","ynU-wVdesr0","ZB4vVVOoAcc","zFsMHuGyJQw","zMvg2JzxHZQ","Zw0rJxxEPro","ZyIsy89x9C4"] 
+
+Getting the transcripts of the videos
+#https://pypi.org/project/youtube-transcript-api/#list-available-transcripts and https://stackoverflow.com/questions/76856230/how-to-extract-youtube-video-transcripts-using-youtube-api-on-python
+from youtube_transcript_api import YouTubeTranscriptApi
+import pandas as pd
+transcripts = []
+transcripts_clean = []
+for video_id in list_ID:
+    try:
+        transcript_data = YouTubeTranscriptApi.get_transcript(video_id, languages=['en-US', "en"])
+        transcripts.append({video_id: transcript_data})
+    except Exception as e:
+        transcripts.append({video_id: "Not possible to extract"})
+for transcript in transcripts:
+    for video_id, content in transcript.items():
+        if content == "Not possible to extract":
+            transcripts_clean.append({"video_id": video_id, "transcript": content})
+        else:
+            full_transcript = " ".join([entry['text'] for entry in content])
+            transcripts_clean.append({"video_id": video_id, "transcript": full_transcript})
+dftranscript = pd.DataFrame(transcripts_clean, columns=["video_id", "transcript"])
+print(dftranscript)
+
+Getting the comments (code extracted from https://www.geeksforgeeks.org/how-to-extract-youtube-comments-using-youtube-api-python/)
+import googleapiclient.discovery 
+from googleapiclient.discovery import build
+import token
+key = "key"
+api_service_name = "youtube"
+api_version = "v3"
+DEVELOPER_KEY = key
+youtube = googleapiclient.discovery.build(api_service_name, api_version, developerKey=DEVELOPER_KEY)
+def get_comments(video_id):
+    comments = []
+    next_page_token = None
+    while True:
+        request = youtube.commentThreads().list(
+            part="snippet",
+            videoId=video_id,
+            maxResults=100,
+            pageToken=next_page_token
+        )
+        response = request.execute()
+        # Append only the text for each comment
+        comments.extend(item['snippet']['topLevelComment']['snippet']['textDisplay'] for item in response['items'])
+        # Update the page token or break if there's no next page
+        next_page_token = response.get('nextPageToken')
+        if not next_page_token:
+            break
+    return comments
+
+comments = []
+for i in list_ID:
+    comment_list = get_comments(i)
+    comments.append({
+        "video_id": i,
+        "comment_count": len(comment_list),
+        "text": comment_list        
+    })
+
+database = pd.DataFrame(comments, columns=["video_id", "comment_count", "text"])
+database.to_json(r"df.json")
+
+Getting length of the video (https://stackoverflow.com/questions/15596753/how-do-i-get-video-durations-with-youtube-api-version-3)
+import requests
+def get_length(video_id):
+    lenght = ""
+    # API URL
+    url = f"https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id={video_id}&key={key}"
+    # Get video details
+    response = requests.get(url)
+    data = response.json()
+    # Extract video duration
+    for item in data['items']:
+        video_duration = item['contentDetails']['duration']
+    return video_duration
+
+#Convert the time into seconds
+import re
+def convert_time(x):
+    match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", x)
+    hours = int(match.group(1)) if match.group(1) else 0
+    minutes = int(match.group(2)) if match.group(2) else 0
+    seconds = int(match.group(3)) if match.group(3) else 0
+    total = seconds + (minutes * 60) + (hours * 3600)
+    return total
+
+dflength_videos["length_videos"] = dflength_videos["length_videos"].apply(lambda x:convert_time(x))
+
+Cleaning and getting toxicity scores of comments
+#Filtering out empty comments or too short (less than 2 characters)
+import pandas as pd
+def clean(texts):
+    text_clean = []  
+    for text in texts:
+        try:
+            if text.strip() != "" and len(text) > 2:
+                text_clean.append(text)
+            else:
+                print(f"No words or too short: {text}")
+        except Exception as e:
+            print(f"Error processing comment: {text}, {e}")
+    return text_clean 
+
+database['text_clean'] = database['text'].apply(clean)
+
+#Function to get toxicity scores and language (https://developers.google.com/codelabs/setup-perspective-api#0)
+
+from googleapiclient import discovery
+from googleapiclient.errors import HttpError
+import pandas as pd
+API_KEY = "key"
+def get_toxicity(comment):
+    client = discovery.build(
+        "commentanalyzer",
+        "v1alpha1",
+        developerKey=API_KEY,
+        discoveryServiceUrl="https://commentanalyzer.googleapis.com/$discovery/rest?version=v1alpha1",
+        static_discovery=False,)
+    analyze_request = {'comment': {'text': comment}, 'requestedAttributes': {'TOXICITY': {}}}
+    try:
+        response = client.comments().analyze(body=analyze_request).execute()
+        toxicity_score = response["attributeScores"]['TOXICITY']['summaryScore']['value']
+        language = response["languages"][0]
+        if language == "und":
+            return None, language
+    
+        return toxicity_score, language
+        
+    except HttpError as e:
+        print("API error for comment:", {comment})
+        return None, None   
+
+#Getting the scores of the data, only for English language texts. The comments of each video was processed independely to ensure correct processing and avoid problems with API.
+import time
+toxicity_data = []
+row_toxicity = []
+for comment in database["text_clean"][#]:
+    try:
+        toxicity_score, language = get_toxicity(comment)
+        if toxicity_score is not None and language == "en":
+            row_toxicity.append(toxicity_score)
+    except Exception as e:
+        print(f"API error for comment: {comment}\nError: {e}")
+    time.sleep(1)  # Pause for 1 second between requests
+toxicity_data.append(row_toxicity)
+toxicity_df = pd.DataFrame({"toxicity": toxicity_data})
+toxicity_df["Processed_comments"] = [len(x) for x in toxicity_df["toxicity"]]
+#Converting the scores into dummy variable
+row_toxicity = []
+
+for i in database["toxicity"]:
+    row_toxicity.append([1 if x >= 0.7 else 0 for x in i])
+database["Toxicity score"] = row_toxicity
+row_toxicity2 = []
+for i in database["Toxicity score"]:
+    percentage = (sum(1 for x in i if x == 1) / len(i)) * 100
+    row_toxicity2.append(percentage)
+database["Percentage of toxic comments"] = row_toxicity2
+database["Percentage of toxic comments"] = database["Percentage of toxic comments"].apply(lambda x:round(x, 2))
+
+gender = pd.read_csv('Gender.csv')
+database['Gender'] = gender["Gender"]
+
+Validating measurements
+#Calculating intra-validity sexism measurement
+import simpledorff
+import pandas as pd
+Data = pd.read_csv('Intra-validity.csv')
+simpledorff.calculate_krippendorffs_alpha_for_df(Data,experiment_col='video', annotator_col='Coding', class_col='Score ')
+
+#Getting random comments for validation of Perspective
+import random
+validation_perspective = []
+for x in range(400):
+    video = random.randint(0,94)
+    comments_list = database["text_clean"][video]
+    comment_id = random.randint(0, len(comments_list) - 1)
+    comment = comments_list[comment_id]          
+    validation_perspective.append(comment)
+print(validation_perspective)
+
+#Getting toxicity scores for the random sample
+import time
+import pandas as pd
+reliability_perspective = pd.read_csv('reliability_perspective.csv')
+row_toxicity = []
+for comment in reliability_perspective["Comments"]:
+    try:
+        toxicity_score, language = get_toxicity(comment)
+        if toxicity_score is not None and language == "en":
+            row_toxicity.append(toxicity_score)
+        else:
+            row_toxicity.append("99")
+    except Exception as e:
+        print(f"Error {e} for {comment}")
+    time.sleep(1) 
+reliability_perspective["Perspective"] = row_toxicity
+
+#Convert scores to dummy variables
+reliability_perspective["Perspective"] = pd.to_numeric(reliability_perspective["Perspective"])
+reliability_perspective["Perspective score"] = reliability_perspective["Perspective"].apply(
+    lambda x: 1 if 1 > x >= 0.7 else (99 if x == 99.00 else 0))
+
+# Reliability toxicity - macro
+from sklearn import metrics
+from sklearn.metrics import precision_score, recall_score
+
+# Filter out rows with '99'
+filtered_data = reliability_perspective[
+    (reliability_perspective["Manual"] != 99) & 
+    (reliability_perspective["Perspective score"] != 99)
+]
+
+print("Precision:", precision_score(
+    filtered_data["Manual"], 
+    filtered_data["Perspective score"], 
+    average='macro'
+))
+print("Recall:", recall_score(
+    filtered_data["Manual"], 
+    filtered_data["Perspective score"], 
+    average='macro'
+))
+
+#calculate F1 score
+from sklearn.metrics import f1_score
+ f1 = f1_score(filtered_data["Perspective score"], filtered_data["Manual"], average='macro')
+# Print the F1 score
+print(f'F1 score: {f1:.3f}')
+
+Analyzing the data
+#Filtering out the empty transcriptions
+database.drop(["35","38","70"],axis=0,inplace=True)
+
+Check for assumptions for multiple regression
+database.describe()
+Outliers
+#Checking outliers toxicity
+database.boxplot(column=['Percentage of toxic comments'])
+plt.show()
+
+#checking outliers length
+database.boxplot(column=['length'])
+plt.show()
+
+#checking outliers amount of comments
+database.boxplot(column=['comment_count'])
+plt.show()
+
+#Recoding sexist and feminist statements into dummy variables (sexist/rest and feminist/rest)
+database["Sexism_recode"] = database["Sexism"].apply(lambda x: 1 if x == 1 else 0)
+database["Feminism_recode"] = database["Sexism"].apply(lambda x: 1 if x == 2 else 0)
+
+#Homoscedasticity (https://www.statology.org/standardized-residuals-python/)
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+y = database['Percentage of toxic comments']
+x = database[["Sexism_recode", 'Feminism_recode', "comment_count", "length"]]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+influence = model.get_influence()
+standardized_residuals = influence.resid_studentized_internal
+predicted_values = model.fittedvalues
+plt.scatter(predicted_values, standardized_residuals)
+plt.axhline(0, color='red', linestyle='--', linewidth=1)
+plt.xlabel("Predicted Values")
+plt.ylabel("Standardized Residuals")
+plt.title("Standardized Residuals vs. Predicted Values")
+plt.show()
+
+#Checking normality (https://www.reddit.com/r/spss/comments/uawa33/assumptions_multiple_linear_regression_with/)
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Get the standardized residuals
+standardized_residuals = model.get_influence().resid_studentized_internal
+
+# Create QQ-plot
+sm.qqplot(standardized_residuals, line ='45') 
+plt.title('QQ-Plot of Standardized Residuals')
+plt.show()
+
+#multicollinearity
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+x = sm.add_constant(database[['Sexism_recode', 'Feminism_recode','length', 'comment_count', "Gender"]])
+# Calculate VIF for each predictor
+vif_data = pd.DataFrame()
+vif_data['Variable'] = x.columns
+vif_data['VIF'] = [variance_inflation_factor(x.values, i) for i in range(x.shape[1])]
+print(vif_data)
+
+Assumptions sexist
+#Sexism: Building residuals (https://www.statology.org/standardized-residuals-python/)
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+#define explanatory variable
+x = database['Sexism_recode']
+#add constant to predictor variables
+x = sm.add_constant(x)
+#fit linear regression model
+model = sm.OLS(y, x).fit() 
+
+influence = model.get_influence()
+standardized_residuals = influence.resid_studentized_internal
+print(standardized_residuals)
+# Extract predicted values from the model
+predicted_values = model.fittedvalues
+# Standardize the predictions
+standardized_predictions = (predicted_values - predicted_values.mean()) / predicted_values.std()
+
+#linearity
+import matplotlib.pyplot as plt
+plt.scatter(database['Sexism_recode'], standardized_residuals)
+plt.axhline(0, color='red', linestyle='--', linewidth=1)
+plt.xlabel("Sexism_recode")
+plt.ylabel("Standardized Residuals")
+plt.title("Residuals vs. Predictor (Sexism_recode)")
+plt.show()
+
+Assumptions feminist
+#Feminism: Building residuals
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database['Feminism_recode']
+#add constant to predictor variables
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+
+#create instance of influence
+influence = model.get_influence()
+standardized_residuals = influence.resid_studentized_internal
+print(standardized_residuals)
+
+# Extract predicted values from the model
+predicted_values = model.fittedvalues
+# Standardize the predictions
+standardized_predictions = (predicted_values - predicted_values.mean()) / predicted_values.std()
+
+#linearity
+import matplotlib.pyplot as plt
+plt.scatter(database['Feminism_recode'], standardized_residuals)
+plt.axhline(0, color='red', linestyle='--', linewidth=1)
+plt.xlabel("Feminism")
+plt.ylabel("Standardized Residuals")
+plt.title("Residuals vs. Predictor (Feminism)")
+plt.show()
+
+Assumptions length
+#Length: Building residuals
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database['length']
+#add constant to predictor variables
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit() 
+
+#create instance of influence
+influence = model.get_influence()
+standardized_residuals = influence.resid_studentized_internal
+print(standardized_residuals)
+
+#Extract predicted values from the model
+predicted_values = model.fittedvalues
+# Standardize the predictions
+standardized_predictions = (predicted_values - predicted_values.mean()) / predicted_values.std()
+
+#linearity
+import matplotlib.pyplot as plt
+plt.scatter(database['length'], standardized_residuals)
+plt.axhline(0, color='red', linestyle='--', linewidth=1)
+plt.xlabel("Length")
+plt.ylabel("Standardized Residuals")
+plt.title("Residuals vs. Predictor (Length)")
+plt.show()
+
+Assumptions amount of comments
+#Amount of comments: Building residuals
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database['comment_count']
+#add constant to predictor variables
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit() 
+
+#create instance of influence
+influence = model.get_influence()
+standardized_residuals = influence.resid_studentized_internal
+print(standardized_residuals)
+
+#Extract predicted values from the model
+predicted_values = model.fittedvalues
+# Standardize the predictions
+standardized_predictions = (predicted_values - predicted_values.mean()) / predicted_values.std()
+
+#linearity
+import matplotlib.pyplot as plt
+plt.scatter(database['comment_count'], standardized_residuals)
+plt.axhline(0, color='red', linestyle='--', linewidth=1)
+plt.xlabel("Comment count")
+plt.ylabel("Standardized Residuals")
+plt.title("Residuals vs. Predictor (Comment count)")
+plt.show()
+
+Assumptions model with gender
+#Homoscedasticity (https://www.statology.org/standardized-residuals-python/)
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+y = database['Percentage of toxic comments']
+x = database[["Sexism_recode", 'Feminism_recode', "comment_count", "length", "Gender"]]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+influence = model.get_influence()
+standardized_residuals = influence.resid_studentized_internal
+predicted_values = model.fittedvalues
+
+#Residual plot for homoscedasticity
+plt.scatter(predicted_values, standardized_residuals)  # Use predicted values directly
+plt.axhline(0, color='red', linestyle='--', linewidth=1)
+plt.xlabel("Predicted Values")
+plt.ylabel("Standardized Residuals")
+plt.title("Standardized Residuals vs. Predicted Values")
+plt.show()
+
+#Checking normality (https://www.reddit.com/r/spss/comments/uawa33/assumptions_multiple_linear_regression_with/)
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import numpy as np
+# Get the standardized residuals
+standardized_residuals = model.get_influence().resid_studentized_internal
+# Create QQ-plot
+sm.qqplot(standardized_residuals, line ='45') 
+plt.title('QQ-Plot of Standardized Residuals')
+plt.show()
+
+#linearity
+import matplotlib.pyplot as plt
+plt.scatter(database['Sexism_recode'], standardized_residuals)
+plt.axhline(0, color='red', linestyle='--', linewidth=1)
+plt.xlabel("Sexism_recode")
+plt.ylabel("Standardized Residuals")
+plt.title("Residuals vs. Predictor (Sexism_recode)")
+plt.show()
+
+Testing models
+Model 1: sexism/feminism vs percentage of toxic comments
+
+#Model 1a: sexism and toxicity
+import statsmodels.api as sm
+#define response variable
+y = database['Percentage of toxic comments']
+#define explanatory variable
+x = database[['Sexism_recode']]
+#add constant to predictor variables
+x = sm.add_constant(x)
+#fit linear regression model
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 1b: feminism and toxicity
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 1c: sexism and feminism and toxicity
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'Feminism_recode']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Model 2: sexism/feminism vs percentage of toxic comments with covariates
+
+#Model 2a: sexism vs toxicity with length and comment count as covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'length', 'comment_count']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 2b: feminism vs toxicity with length and comment count as covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode', 'length', 'comment_count']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 2c: sexism and feminism vs toxicity with length and comment count as covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode','Feminism_recode', 'length', 'comment_count']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Model 3: sexism/feminism vs toxicity with moderation of Gender
+#drop cases with gender other than male/female
+database.drop(["18", "25", "31", "43", "59", "73", "76","85"],axis=0,inplace=True)
+
+#Moderation of gender
+database['Sexism_Gender_Interaction'] = database['Sexism_recode'] * database['Gender']
+database['Feminism_Gender_Interaction'] = database['Feminism_recode'] * database['Gender']
+
+#Model 3a: sexism vs toxicity with moderation of Gender
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', "Gender", 'Sexism_Gender_Interaction']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 3b: feminism vs toxicity with moderation of Gender
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode', "Gender", 'Feminism_Gender_Interaction']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 3b: feminism vs toxicity with moderation of Gender
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode','Feminism_recode', "Gender", 'Feminism_Gender_Interaction']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Model 4: sexism/feminism vs toxicity with moderation of Gender and covariates
+
+#Model 4a: sexism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', "Gender", 'Sexism_Gender_Interaction', 'length', 'comment_count']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 4b: feminism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode', "Gender", 'Feminism_Gender_Interaction', 'length', 'comment_count']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 4c: sexism and feminism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode','Feminism_recode', "Gender", 'Feminism_Gender_Interaction', 'length', 'comment_count']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Normalizing of control variables (length and amount of comments)
+# Normalizing the variables using Z-score
+database['length_recode_z'] = (database['length'] - database['length'].mean()) / database['length'].std()
+database['comment_count_recode_z'] = (database['comment_count'] - database['comment_count'].mean()) / database['comment_count'].std()
+
+Model 2: sexism/feminism vs percentage of toxic comments with covariates
+
+#Model 2a: sexism vs toxicity with length and comment count as covariates z score
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 2b: feminism vs toxicity with length and comment count as covariates z score
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 2c: sexism and feminism vs toxicity with length and comment count as covariates z score
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'Feminism_recode', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Model 4: sexism/feminism vs toxicity with moderation of Gender and covariates
+
+#Model 4a: sexism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', "Gender", 'Sexism_Gender_Interaction', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 4b: feminism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode', "Gender", 'Feminism_Gender_Interaction', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 4c: feminism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'Feminism_recode', "Gender", 'Feminism_Gender_Interaction', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Robustness check (running regressions removing outliers)
+#filtering out the outliers (54=9.43, 61=8.83)
+database.drop(["54","61"],axis=0,inplace=True)
+
+Model 1: sexism/feminism vs percentage of toxic comments
+#Model 1a: sexism and toxicity
+import statsmodels.api as sm
+#define response variable
+y = database['Percentage of toxic comments']
+#define explanatory variable
+x = database[['Sexism_recode']]
+#add constant to predictor variables
+x = sm.add_constant(x)
+#fit linear regression model
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 1b: feminism and toxicity
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 1c: sexism and feminism and toxicity
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'Feminism_recode']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Model 2: sexism/feminism vs percentage of toxic comments with covariates
+
+#Model 2a: sexism vs toxicity with length and comment count as covariates z score
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 2b: feminism vs toxicity with length and comment count as covariates z score
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 2c: sexism and feminism vs toxicity with length and comment count as covariates z score
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'Feminism_recode', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Model 3: sexism/feminism vs toxicity with moderation of Gender
+
+#drop cases with gender other than male/female
+database.drop(["18", "25", "31", "43", "59", "73", "76","85"],axis=0,inplace=True)
+
+#Moderation of gender
+database['Sexism_Gender_Interaction'] = database['Sexism_recode'] * database['Gender']
+database['Feminism_Gender_Interaction'] = database['Feminism_recode'] * database['Gender']
+
+#Model 3a: sexism vs toxicity with moderation of Gender
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', "Gender", 'Sexism_Gender_Interaction']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 3b: feminism vs toxicity with moderation of Gender
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode', "Gender", 'Feminism_Gender_Interaction']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 3b: feminism vs toxicity with moderation of Gender
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode','Feminism_recode', "Gender", 'Feminism_Gender_Interaction']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+Model 4: sexism/feminism vs toxicity with moderation of Gender and covariates
+
+#Model 4a: sexism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', "Gender", 'Sexism_Gender_Interaction', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 4b: feminism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Feminism_recode', "Gender", 'Feminism_Gender_Interaction', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+#Model 4c: feminism vs toxicity with moderation of Gender and covariates
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'Feminism_recode', "Gender", 'Feminism_Gender_Interaction', 'length_recode_z', 'comment_count_recode_z']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
+
+
+#Interaction sexism and feminism
+database['Sexism_Feminism_Interaction'] = database['Sexism_recode'] * database['Feminism_recode']
+
+import statsmodels.api as sm
+y = database['Percentage of toxic comments']
+x = database[['Sexism_recode', 'Feminism_recode', 'Sexism_Feminism_Interaction']]
+x = sm.add_constant(x)
+model = sm.OLS(y, x).fit()
+print(model.summary())
